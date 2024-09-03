@@ -1,48 +1,119 @@
 import type { MetaFunction } from "@remix-run/node";
+import {
+  ClientActionFunctionArgs,
+  Form,
+  useActionData,
+} from "@remix-run/react";
+import {
+  addMonths,
+  differenceInDays,
+  differenceInMonths,
+  endOfMonth,
+  isAfter,
+  isSameDay,
+  startOfMonth,
+} from "date-fns";
+import { FC } from "react";
 
 export const meta: MetaFunction = () => {
-  return [
-    { title: "New Remix App" },
-    { name: "description", content: "Welcome to Remix!" },
-  ];
+  return [{ title: "Kyukai kun proto" }];
 };
 
-export default function Index() {
+const Page: FC = () => {
+  const actionData = useActionData<typeof clientAction>();
+
   return (
-    <div className="font-sans p-4">
-      <h1 className="text-3xl">Welcome to Remix</h1>
-      <ul className="list-disc mt-4 pl-6 space-y-2">
-        <li>
-          <a
-            className="text-blue-700 underline visited:text-purple-900"
-            target="_blank"
-            href="https://remix.run/start/quickstart"
-            rel="noreferrer"
-          >
-            5m Quick Start
-          </a>
-        </li>
-        <li>
-          <a
-            className="text-blue-700 underline visited:text-purple-900"
-            target="_blank"
-            href="https://remix.run/start/tutorial"
-            rel="noreferrer"
-          >
-            30m Tutorial
-          </a>
-        </li>
-        <li>
-          <a
-            className="text-blue-700 underline visited:text-purple-900"
-            target="_blank"
-            href="https://remix.run/docs"
-            rel="noreferrer"
-          >
-            Remix Docs
-          </a>
-        </li>
-      </ul>
-    </div>
+    <main className="mx-auto max-w-sm">
+      <h1>Kyukai kun proto</h1>
+      <section>
+        <h2>日付を入力</h2>
+        <Form method="post" className="flex flex-col">
+          <label>
+            休会開始日
+            <input type="date" name="start" />
+          </label>
+          <label>
+            休会終了予定日
+            <input type="date" name="end" />
+          </label>
+          {actionData && actionData?.errors.length !== 0 && (
+            <ul className="text-red-500">
+              {actionData.errors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          )}
+          <button type="submit" className="bg-blue-500 text-white">
+            計算する
+          </button>
+        </Form>
+      </section>
+      {actionData && actionData.freeMonths.length !== 0 && (
+        <section>
+          <h2>会費をスキップできる月</h2>
+          <ul>
+            {actionData.freeMonths.map((month, index) => (
+              <li key={index}>{month}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </main>
   );
-}
+};
+export default Page;
+
+export const clientAction = async ({ request }: ClientActionFunctionArgs) => {
+  const formData = await request.formData();
+
+  const start = formData.get("start")?.toString();
+  const end = formData.get("end")?.toString();
+
+  if (!start || !end) {
+    return {
+      errors: [
+        !start && "休会開始日を入力してください",
+        !end && "休会終了予定日を入力してください",
+      ],
+      freeMonths: [],
+    };
+  }
+
+  const isStartOfMonth = isSameDay(startOfMonth(start), new Date(start));
+  const isEndOfMonth = isSameDay(endOfMonth(end), new Date(end));
+  if (!isStartOfMonth || !isEndOfMonth) {
+    return {
+      errors: [
+        !isStartOfMonth && "休会開始日には月初日を入力してください",
+        !isEndOfMonth && "休会終了日には月末日を入力してください",
+      ].filter((error) => typeof error === "string"),
+      freeMonths: [],
+    };
+  }
+
+  if (isAfter(start, end)) {
+    return {
+      errors: ["休会終了日には休会開始日より後の日付を入力してください"],
+      freeMonths: [],
+    };
+  }
+
+  if (differenceInDays(end, start) > 90) {
+    return {
+      errors: ["休会期間は90日以内にしてください"],
+      freeMonths: [],
+    };
+  }
+
+  const freeMonths = Array.from(
+    { length: differenceInMonths(end, start) + 1 },
+    (_, i) => addMonths(start, i).getMonth() + 1
+  )
+    .map((month) => (month === 1 ? 12 : month - 1))
+    .map((month) => `${month}月`);
+
+  return {
+    errors: [],
+    freeMonths,
+  };
+};
